@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BLOCK = bytes(64 * 1024)
 SIZE = 4 * 1024 * 1024
+MAX_STREAM_BYTES = 512 * 1024 * 1024
+WIRE_BLOCK = b"%x\r\n" % len(BLOCK) + BLOCK + b"\r\n"
 DEADLINE = 15
 SERVICE = "netscope-peer/1"
 
@@ -37,12 +39,13 @@ class PeerServer(ThreadingHTTPServer):
         with self.nonce_lock:
             if now - self.last_nonce_prune >= 5:
                 self.recent_nonces = {
-                    k: v for k, v in self.recent_nonces.items() if now - v <= 60
+                    k: expiry for k, expiry in self.recent_nonces.items() if expiry >= now
                 }
                 self.last_nonce_prune = now
             if nonce in self.recent_nonces or len(self.recent_nonces) >= 4096:
                 return False
-            self.recent_nonces[nonce] = now
+            # Even a timestamp 60 seconds ahead remains eligible for another 60 seconds.
+            self.recent_nonces[nonce] = now + 120
             return True
 
     def process_request(self, request, address):
@@ -121,11 +124,28 @@ class PeerHandler(BaseHTTPRequestHandler):
             self.end_headers()
             for _ in range(SIZE // len(BLOCK)):
                 self.wfile.write(BLOCK)
+        elif self.path in ("/v2/download/5", "/v2/download/10"):
+            seconds = int(self.path.rsplit("/", 1)[1])
+            self.protocol_version = "HTTP/1.1"
+            self.send_response(200)
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Connection", "close")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            deadline = time.perf_counter() + seconds
+            sent = 0
+            while sent < MAX_STREAM_BYTES and time.perf_counter() < deadline:
+                self.wfile.write(WIRE_BLOCK)
+                sent += len(BLOCK)
+            self.wfile.write(b"0\r\n\r\n")
         else:
             self.reply(404)
 
     def do_POST(self):
         if not self.authorized():
+            return
+        if self.path in ("/v2/upload/5", "/v2/upload/10"):
+            self.receive_stream(int(self.path.rsplit("/", 1)[1]))
             return
         if self.path != "/v1/upload":
             self.reply(404)
@@ -141,6 +161,38 @@ class PeerHandler(BaseHTTPRequestHandler):
                 return
             remaining -= len(chunk)
         self.reply(200, str(SIZE).encode())
+
+    def receive_stream(self, seconds):
+        if (
+            self.headers.get("Transfer-Encoding", "").lower() != "chunked"
+            or "Content-Length" in self.headers
+        ):
+            self.reply(400)
+            return
+        total = 0
+        deadline = time.perf_counter() + seconds + 2  # allow the final in-flight block and terminator
+        while time.perf_counter() < deadline:
+            header = self.rfile.readline(12)
+            digits = header.removesuffix(b"\r\n")
+            if (
+                not header.endswith(b"\r\n")
+                or not 1 <= len(digits) <= 8
+                or any(c not in b"0123456789abcdefABCDEF" for c in digits)
+            ):
+                self.reply(400)
+                return
+            size = int(digits, 16)
+            if size > len(BLOCK) or total + size > MAX_STREAM_BYTES:
+                self.reply(413)
+                return
+            if len(self.rfile.read(size)) != size or self.rfile.read(2) != b"\r\n":
+                self.reply(400)
+                return
+            if size == 0:
+                self.reply(200, str(total).encode())
+                return
+            total += size
+        self.reply(408)
 
 
 def main():
