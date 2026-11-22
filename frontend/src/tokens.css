@@ -1,0 +1,139 @@
+@import "tailwindcss";
+:root {
+  color-scheme: light;
+  --canvas: #f5f7fa;
+  --surface: #fff;
+  --sidebar: #f9fafc;
+  --soft: #f3f5f8;
+  --ink: #192331;
+  --secondary: #516176;
+  --muted: #69788b;
+  --line: #dce3eb;
+  --subtle: #e9edf3;
+  --blue: #2263d9;
+  --blue-ink: #1859c5;
+  --blue-wash: #eaf1ff;
+  --teal: #008a7b;
+  --teal-wash: #e5f5f0;
+  --good: #147659;
+  --good-wash: #e6f5ed;
+  --warn: #986019;
+  --warn-wash: #fff3da;
+  --danger: #b03a45;
+  --danger-wash: #fff0f0;
+  --shadow: 0 2px 4px #1b354004;
+  --radius: 13px;
+  --sidebar-width: 210px;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", sans-serif;
+  --mono:
+    ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 14px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #111722;
+  --surface: #19212d;
+  --sidebar: #151c27;
+  --soft: #212b39;
+  --ink: #e9edf5;
+  --secondary: #b5c0ce;
+  --muted: #9aaabe;
+  --line: #374353;
+  --subtle: #2d3745;
+  --blue: #83afff;
+  --blue-ink: #9bbfff;
+  --blue-wash: #253852;
+  --teal: #62cfb9;
+  --teal-wash: #193a36;
+  --good: #78d4ac;
+  --good-wash: #1c392f;
+  --warn: #efc37d;
+  --warn-wash: #413420;
+  --danger: #ffa4ab;
+  --danger-wash: #422c33;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+select {
+  touch-action: manipulation;
+}
+button,
+select {
+  cursor: pointer;
+}
+button {
+  color: inherit;
+}
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+button,
+a,
+select,
+input {
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+a {
+  color: var(--blue-ink);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+svg {
+  flex-shrink: 0;
+  stroke-width: 1.7;
+}
+::selection {
+  background: var(--blue-wash);
+  color: var(--blue-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}

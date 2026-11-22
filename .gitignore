@@ -21,3 +21,8 @@ test-results/
 .local/
 data/
 coverage/
+
+# Keep Word documents, the course report and its dedicated figure on this machine.
+*.[dD][oO][cC][xX]
+/docs/course-report.md
+/docs/images/packet.png
