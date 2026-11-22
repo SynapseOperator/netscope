@@ -50,6 +50,8 @@ export type Rule = {
 };
 export type Count = { name: string; packets: number; bytes: number };
 export type Capture = {
+  bpf: string | null;
+  session_id: number | null;
   state: "idle" | "running" | "stopped" | "imported" | "error";
   source: null | "live" | "pcap";
   interface: string | null;
@@ -63,6 +65,7 @@ export type Capture = {
   endpoints: Count[];
 };
 export type Session = {
+  bpf?: string | null;
   id: number;
   source: string;
   interface: string | null;
@@ -74,6 +77,7 @@ export type Session = {
   endpoints: Count[];
 };
 export type Packet = {
+  direction?: string;
   id: number;
   timestamp: number;
   network: string;
@@ -85,6 +89,12 @@ export type Packet = {
   length: number;
   headers: Record<string, Record<string, string | number>>;
 };
+export type SpeedSegment = {
+  direction: "download" | "upload";
+  elapsed_s: number;
+  bytes: number;
+  mbps: number;
+};
 export type TestResult = {
   at: number;
   target: string;
@@ -92,12 +102,28 @@ export type TestResult = {
   latency_ms: number;
   download_mbps: number;
   upload_mbps: number;
-  mode?: "quick" | "repeated" | null;
+  mode?: "quick" | "repeated" | "sustained" | null;
+  started_at?: number | null;
+  ended_at?: number | null;
+  interface?: string | null;
+  duration_s?: number | null;
+  download_bytes?: number | null;
+  upload_bytes?: number | null;
+  download_seconds?: number | null;
+  upload_seconds?: number | null;
+  loaded_latency_ms?: number | null;
+  latency_delta_ms?: number | null;
+  idle_jitter_ms?: number | null;
+  loaded_jitter_ms?: number | null;
+  loaded_samples?: number | null;
+  segments?: SpeedSegment[] | null;
+  limit_reached?: boolean | null;
   rounds?: number | null;
   download_cv_pct?: number | null;
   upload_cv_pct?: number | null;
 };
 export type Speed = {
+  segments?: SpeedSegment[];
   running: boolean;
   phase: string;
   progress: number;

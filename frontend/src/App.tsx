@@ -52,8 +52,8 @@ const navIcons: Record<Page, LucideIcon> = {
   alerts: Bell,
   settings: Cog,
 };
-function readPage(): Page {
-  const key = location.hash.slice(1);
+function readPage(hash: string): Page {
+  const key = hash.slice(1).split("?", 1)[0];
   return Object.hasOwn(pages, key) ? (key as Page) : "dashboard";
 }
 function Auth({ onUser }: { onUser: (u: User) => void }) {
@@ -72,7 +72,9 @@ function Auth({ onUser }: { onUser: (u: User) => void }) {
       .catch(() => {
         if (active) setCanRegister(null);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -212,7 +214,10 @@ function Preferences({
     setAdded("");
     setError("");
     try {
-      await post("/auth/register", { username: newName.trim(), password: newPassword });
+      await post("/auth/register", {
+        username: newName.trim(),
+        password: newPassword,
+      });
       setAdded("已创建本地账户：" + newName.trim());
       setNewName("");
       setNewPassword("");
@@ -393,11 +398,12 @@ function Workbench({
   setDark: (v: boolean) => void;
 }) {
   const live = useMonitor(),
-    [page, setPage] = useState(readPage),
+    [hash, setHash] = useState(() => location.hash),
     [menu, setMenu] = useState(false);
+  const page = readPage(hash);
   useEffect(() => {
     const change = () => {
-      setPage(readPage());
+      setHash(location.hash);
       setMenu(false);
       window.scrollTo(0, 0);
     };
@@ -519,11 +525,11 @@ function Workbench({
           ) : page === "devices" ? (
             <Devices live={live} />
           ) : page === "packets" ? (
-            <Packets />
+            <Packets key={hash} />
           ) : page === "speed" ? (
             <Speed />
           ) : page === "history" ? (
-            <Reports live={live} dark={dark} />
+            <Reports key={hash} live={live} dark={dark} />
           ) : page === "alerts" ? (
             <Alerts />
           ) : (

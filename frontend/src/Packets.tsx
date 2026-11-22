@@ -1,14 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
-import {
-  Archive,
-  Cable,
-  FileUp,
-  Layers3,
-  ListFilter,
-  Network,
-  Play,
-  Square,
-} from "lucide-react";
+import { Cable, FileUp, Layers3, ListFilter, Play, Square } from "lucide-react";
 import {
   type Capture,
   type Count,
@@ -29,6 +20,13 @@ import {
   Panel,
   Tag,
 } from "./ui";
+
+import {
+  CaptureAnalysis,
+  analysisProtocols,
+  directionNames,
+  type Selection,
+} from "./CaptureAnalysis";
 
 export function CountTable({
   items,
@@ -72,6 +70,27 @@ export function Packets() {
     [msg, setMsg] = useState(""),
     [filters, setFilters] = useState("");
   const [selected, setSelected] = useState<Packet | null>(null);
+  const [advanced, setAdvanced] = useState(false),
+    [bpf, setBpf] = useState(""),
+    [captureProtocol, setCaptureProtocol] = useState(""),
+    [captureIp, setCaptureIp] = useState(""),
+    [capturePort, setCapturePort] = useState("");
+  const [revision, setRevision] = useState(0),
+    [caption, setCaption] = useState("");
+  const list = useRef<HTMLDivElement>(null),
+    query = new URLSearchParams(filters.slice(1));
+  function drill(next: Selection, note: string) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(next)) {
+      if (value != null && value !== "") params.set(key, String(value));
+    }
+    setFilters(params.size ? "&" + params.toString() : "");
+    setSelected(null);
+    setCaption(note);
+    if (note !== "分析条件" && note !== "全部报文") {
+      list.current?.scrollIntoView({ block: "start" });
+    }
+  }
   const file = useRef<HTMLInputElement>(null);
   const packets = useResource<Packet[]>(
     "/capture/packets?limit=150" + filters,
@@ -87,6 +106,9 @@ export function Packets() {
     try {
       await fn();
       setSelected(null);
+      setFilters("");
+      setCaption("");
+      setRevision((v) => v + 1);
       packets.reload();
     } catch (e) {
       setMsg(errorText(e));
@@ -98,12 +120,15 @@ export function Packets() {
   const filter = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fields = new FormData(e.currentTarget),
-      query = new URLSearchParams();
+      params = new URLSearchParams(filters.slice(1));
+    params.delete("flow_id");
     for (const key of ["ip", "port", "protocol"]) {
       const value = String(fields.get(key) || "").trim();
-      if (value) query.set(key, value);
+      if (value) params.set(key, value);
+      else params.delete(key);
     }
-    setFilters(query.size ? "&" + query.toString() : "");
+    setFilters(params.size ? "&" + params.toString() : "");
+    setCaption("");
     setSelected(null);
     packets.reload();
   };
@@ -162,6 +187,7 @@ export function Packets() {
         {!!c?.driver_note && <Notice tone="info">{c.driver_note}</Notice>}
         <Panel
           title="捕获会话"
+          desc="捕获前可设置 BPF，由抓包驱动筛选进入会话的报文。"
           icon={Cable}
           action={
             <Tag
@@ -209,7 +235,20 @@ export function Packets() {
                   disabled={!c?.available || !selectedName || busy}
                   onClick={() =>
                     void action(() =>
-                      post("/capture/start", { interface: selectedName }),
+                      post("/capture/start", {
+                        interface: selectedName,
+                        ...(advanced
+                          ? { bpf: bpf.trim() }
+                          : {
+                              ...(captureProtocol && {
+                                protocol: captureProtocol,
+                              }),
+                              ...(captureIp.trim() && { ip: captureIp.trim() }),
+                              ...(capturePort !== "" && {
+                                port: Number(capturePort),
+                              }),
+                            }),
+                      }),
                     )
                   }
                 >
@@ -227,6 +266,69 @@ export function Packets() {
               <strong>{bytes(c?.bytes)}</strong>
             </div>
           </div>
+          {!running && (
+            <div className="toolbar capture-filter">
+              <label className="field">
+                <span>捕获条件</span>
+                <select
+                  value={advanced ? "expression" : "preset"}
+                  onChange={(e) => setAdvanced(e.target.value === "expression")}
+                >
+                  <option value="preset">常用过滤</option>
+                  <option value="expression">自定义 BPF</option>
+                </select>
+              </label>
+              {advanced ? (
+                <Field
+                  label="BPF 捕获过滤器"
+                  maxLength={256}
+                  className="bpf-expression"
+                  value={bpf}
+                  placeholder="tcp and port 443"
+                  onChange={(e) => setBpf(e.target.value)}
+                />
+              ) : (
+                <>
+                  <label className="field">
+                    <span>捕获协议</span>
+                    <select
+                      value={captureProtocol}
+                      onChange={(e) => setCaptureProtocol(e.target.value)}
+                    >
+                      <option value="">全部协议</option>
+                      {[
+                        "TCP",
+                        "UDP",
+                        "ICMP",
+                        "ICMPv6",
+                        "IP",
+                        "IPv4",
+                        "IPv6",
+                        "ARP",
+                      ].map((p) => (
+                        <option key={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Field
+                    label="捕获 IP"
+                    value={captureIp}
+                    placeholder="任一 IP 地址"
+                    onChange={(e) => setCaptureIp(e.target.value)}
+                  />
+                  <Field
+                    label="捕获端口"
+                    type="number"
+                    min={0}
+                    max={65535}
+                    value={capturePort}
+                    placeholder="全部端口"
+                    onChange={(e) => setCapturePort(e.target.value)}
+                  />
+                </>
+              )}
+            </div>
+          )}
           <div className="panel-note">
             来源 ·{" "}
             {c?.source === "pcap"
@@ -234,20 +336,48 @@ export function Packets() {
               : c?.source === "live"
                 ? "实时网卡"
                 : "尚未开始"}{" "}
-            / 保留最近 {c?.capacity ?? 500} 条报文的首部元数据
+            / 保留最近 {c?.capacity ?? 500} 条报文的首部元数据{" "}
+            {c?.source === "live" && (
+              <span>
+                {" "}
+                / 生效 BPF · <code>{c.bpf || "全部报文"}</code>
+              </span>
+            )}
           </div>
         </Panel>
-        <div className="packet-grid">
+        <CaptureAnalysis key={revision} running={running} onDrill={drill} />
+        <div className="packet-grid" ref={list}>
           <Panel
             title="报文列表"
             icon={ListFilter}
-            desc="显示最近匹配的 150 条记录，点击查看首部。"
+            desc="结果筛选作用于当前会话的首部缓存，最多显示 150 条匹配记录。"
           >
-            <form className="toolbar" onSubmit={filter}>
-              <Field label="IP 地址" name="ip" placeholder="任一端点" />
+            {(query.size > 0 || caption) && (
+              <div className="linked-scope">
+                <span>{caption ? "联动筛选 · " + caption : "结果条件"}</span>
+                {query.get("flow_id") && <code>指定流</code>}
+                {query.get("direction") && (
+                  <code>{directionNames[query.get("direction")!]}</code>
+                )}
+                {query.has("start") && (
+                  <code>从 {clock(Number(query.get("start")), true)}</code>
+                )}
+                {query.has("end") && (
+                  <code>至 {clock(Number(query.get("end")), true)}</code>
+                )}
+              </div>
+            )}
+            <form key={filters} className="toolbar" onSubmit={filter}>
+              <Field
+                label="IP 地址"
+                name="ip"
+                placeholder="任一端点"
+                defaultValue={query.get("ip") ?? ""}
+              />
               <Field
                 label="端口"
                 name="port"
+                defaultValue={query.get("port") ?? ""}
                 type="number"
                 min="0"
                 max="65535"
@@ -255,18 +385,12 @@ export function Packets() {
               />
               <label className="field">
                 <span>协议层</span>
-                <select name="protocol" defaultValue="">
+                <select
+                  name="protocol"
+                  defaultValue={query.get("protocol") ?? ""}
+                >
                   <option value="">全部协议</option>
-                  {[
-                    "IP",
-                    "IPv4",
-                    "IPv6",
-                    "TCP",
-                    "UDP",
-                    "ICMP",
-                    "ICMPv6",
-                    "ARP",
-                  ].map((p) => (
+                  {analysisProtocols.map((p) => (
                     <option key={p}>{p}</option>
                   ))}
                 </select>
@@ -277,6 +401,7 @@ export function Packets() {
                 className="softbtn"
                 onClick={() => {
                   setFilters("");
+                  setCaption("");
                   setSelected(null);
                   packets.reload();
                 }}
@@ -299,6 +424,7 @@ export function Packets() {
                         "时间",
                         "网络层",
                         "协议",
+                        "方向",
                         "源地址 / 端口",
                         "目的地址 / 端口",
                         "长度",
@@ -327,6 +453,11 @@ export function Packets() {
                         <td>{p.network}</td>
                         <td>
                           <span className="pill">{p.protocol}</span>
+                        </td>
+                        <td>
+                          {p.direction
+                            ? (directionNames[p.direction] ?? p.direction)
+                            : "未记录"}
                         </td>
                         <td className="mono">
                           {p.src}
@@ -388,18 +519,6 @@ export function Packets() {
                 detail="逐层查看网络与传输协议的首部字段。"
               />
             )}
-          </Panel>
-        </div>
-        <div className="duo">
-          <Panel title="协议分布" icon={Archive} desc="按传输或控制协议计数。">
-            <CountTable items={c?.protocols ?? []} />
-          </Panel>
-          <Panel
-            title="通信端点"
-            icon={Network}
-            desc="每个不同的源或目的地址各计一次，收发地址相同时计一次。"
-          >
-            <CountTable endpoint items={c?.endpoints ?? []} />
           </Panel>
         </div>
       </div>

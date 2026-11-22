@@ -29,6 +29,7 @@ import {
   errorText,
 } from "./data";
 import { TrafficChart } from "./chart";
+import { historyLink } from "./timeWindow";
 import {
   bytes,
   clock,
@@ -197,6 +198,29 @@ export function Overview({
     s = m?.latest,
     selected = m?.interfaces.find((i) => i.name === m.selected);
   const [period, setPeriod] = useState(60);
+  const peak = m?.series
+    .filter(
+      (p) =>
+        s && p.ts >= s.ts - period && (p.rx_bps !== null || p.tx_bps !== null),
+    )
+    .reduce<Sample | null>(
+      (highest, p) =>
+        !highest ||
+        (p.rx_bps ?? 0) + (p.tx_bps ?? 0) >
+          (highest.rx_bps ?? 0) + (highest.tx_bps ?? 0)
+          ? p
+          : highest,
+      null,
+    );
+  function inspectMinute(ts: number) {
+    if (!m?.selected) return;
+    const start = Math.floor(ts / 60) * 60;
+    location.hash = historyLink({
+      start,
+      end: start + 60,
+      interface: m.selected,
+    });
+  }
   const alerts = useResource<{ items: AlertRow[] }>("/alerts", 5000);
   const down = rate(s?.rx_bps),
     up = rate(s?.tx_bps),
@@ -254,7 +278,7 @@ export function Overview({
           <Panel
             title="实时流量趋势"
             icon={Activity}
-            desc="系统网卡计数器 · 收发速率"
+            desc="系统网卡计数器 · 点击采样位置查看该分钟的抓包记录"
             action={
               <div className="tabgroup" aria-label="趋势时间窗口">
                 {[30, 60, 120].map((n) => (
@@ -274,6 +298,7 @@ export function Overview({
                 points={m?.series ?? []}
                 period={period}
                 dark={dark}
+                onInspect={inspectMinute}
               />
             </div>
             <div className="chart-foot">
@@ -283,6 +308,13 @@ export function Overview({
                 <i />
                 上传
               </div>
+              <button
+                className="btn-link"
+                disabled={!peak}
+                onClick={() => peak && inspectMinute(peak.ts)}
+              >
+                分析收发合计峰值
+              </button>
               <span>
                 <Clock3 size={12} />
                 {m?.interval ?? 1} 秒采样
