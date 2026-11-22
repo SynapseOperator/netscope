@@ -216,6 +216,10 @@ def test_driver_bpf_presets_and_failure_do_not_fall_back(api, monkeypatch):
     assert not api.get("/capture/history").json()
     assert api.post(url, json={"interface": "sample", "bpf": "tcp and ("}).status_code == 422
     assert applied[-1] == ("tcp and (", False)
+    assert packets.StartParams(interface="sample", protocol="ICMP").expression() == "icmp"
+    assert packets.StartParams(interface="sample", protocol="ICMPv6").expression() == "icmp6"
+    rejected = api.post(url, json={"interface": "sample", "protocol": "ICMP", "port": 80})
+    assert rejected.status_code == 422 and "没有传输层端口" in rejected.json()["detail"]
     assert (
         packets.StartParams(interface="sample", protocol="IPv6", ip="2001:db8::1").expression()
         == "ip6 and host 2001:db8::1"

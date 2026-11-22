@@ -553,13 +553,15 @@ class StartParams(BaseModel):
             raise HTTPException(422, "请选择预设过滤或高级 BPF 中的一种。")
         if advanced:
             return advanced
+        if self.port is not None and self.protocol in ("ICMP", "ICMPv6", "ARP"):
+            raise HTTPException(422, "所选协议没有传输层端口，请清空端口或选择 TCP/UDP。")
         terms = []
         if self.protocol:
             terms.append(
                 {
                     "TCP": "tcp",
                     "UDP": "udp",
-                    "ICMP": "(icmp or icmp6)",
+                    "ICMP": "icmp",
                     "ICMPv6": "icmp6",
                     "IP": "(ip or ip6)",
                     "IPv4": "ip",
