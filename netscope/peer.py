@@ -27,7 +27,23 @@ class PeerServer(ThreadingHTTPServer):
     def __init__(self, address, key):
         self.key = key
         self.slots = threading.BoundedSemaphore(2)
+        self.nonce_lock = threading.Lock()
+        self.recent_nonces = {}
+        self.last_nonce_prune = 0.0
         super().__init__(address, PeerHandler)
+
+    def claim_nonce(self, nonce, now):
+        """Reject signed replays within the timestamp window, with bounded memory."""
+        with self.nonce_lock:
+            if now - self.last_nonce_prune >= 5:
+                self.recent_nonces = {
+                    k: v for k, v in self.recent_nonces.items() if now - v <= 60
+                }
+                self.last_nonce_prune = now
+            if nonce in self.recent_nonces or len(self.recent_nonces) >= 4096:
+                return False
+            self.recent_nonces[nonce] = now
+            return True
 
     def process_request(self, request, address):
         if not self.slots.acquire(blocking=False):
@@ -81,7 +97,12 @@ class PeerHandler(BaseHTTPRequestHandler):
         self.challenge = f"{self.command} {self.path} {stamp} {nonce}"
         expected = signature(self.server.key, self.challenge)
         received = self.headers.get("X-NetScope-Auth", "").encode("latin1")
-        if abs(time.time() - int(stamp)) > 60 or not hmac.compare_digest(expected.encode(), received):
+        now = time.time()
+        if (
+            abs(now - int(stamp)) > 60
+            or not hmac.compare_digest(expected.encode(), received)
+            or not self.server.claim_nonce(nonce, now)
+        ):
             self.reply(401)
             return False
         return True

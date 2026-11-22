@@ -34,7 +34,10 @@ export function SpeedTable({ rows }: { rows: TestResult[] }) {
             <tr key={i}>
               <td className="mono">{clock(r.at, true)}</td>
               <td>{r.target}</td>
-              <td>{scopeNames[r.scope] ?? r.scope}</td>
+              <td>
+                {scopeNames[r.scope] ?? r.scope}
+                {r.mode === "repeated" ? ` · 重复${r.rounds ?? 8}轮` : " · 快速"}
+              </td>
               <td>{num(r.latency_ms)} ms</td>
               <td>{num(r.download_mbps)} Mbit/s</td>
               <td>{num(r.upload_mbps)} Mbit/s</td>
@@ -60,6 +63,7 @@ export function Speed() {
     hist = useResource<TestResult[]>("/speed/history", 3500);
   const [target, setTarget] = useState("http://127.0.0.1:8766"),
     [token, setToken] = useState(""),
+    [mode, setMode] = useState<"quick" | "repeated">("quick"),
     [sending, setSending] = useState(false),
     [err, setErr] = useState("");
   const run = async (e: FormEvent) => {
@@ -67,7 +71,7 @@ export function Speed() {
     setSending(true);
     setErr("");
     try {
-      await post("/speed", { target: target.trim(), token });
+      await post("/speed", { target: target.trim(), token, mode });
       state.reload();
       hist.reload();
     } catch (e) {
@@ -117,8 +121,20 @@ export function Speed() {
                 autoComplete="off"
                 disabled={busy}
               />
+              <label className="field">
+                <span>测试方式</span>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as "quick" | "repeated")}
+                  disabled={busy}
+                  aria-label="测试方式"
+                >
+                  <option value="quick">快速 · 单轮 4 MiB</option>
+                  <option value="repeated">重复测量 · 每方向 8 轮，共 32 MiB</option>
+                </select>
+              </label>
               <span className="hint">
-                回环地址用于本机验证。输入另一台受控计算机的服务地址可测量两端链路。
+                回环地址仅用于本机验证。重复测量会统计多轮波动，仍表示应用层吞吐量而非链路容量。
               </span>
               <div>
                 <button className="primary" disabled={busy || !s}>
@@ -166,7 +182,12 @@ export function Speed() {
               {result && (
                 <div className="panel-note flush">
                   测量范围 · {scopeNames[result.scope]} /{" "}
-                  {clock(result.at, true)}
+                  {clock(result.at, true)} ·{" "}
+                  {result.mode === "repeated" ? `重复${result.rounds ?? 8}轮` : "快速单轮"}
+                  {result.download_cv_pct != null &&
+                    ` · 下载波动系数 ${num(result.download_cv_pct)}%`}
+                  {result.upload_cv_pct != null &&
+                    ` · 上传波动系数 ${num(result.upload_cv_pct)}%`}
                 </div>
               )}
             </div>

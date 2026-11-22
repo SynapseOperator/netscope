@@ -3,25 +3,31 @@ import { randomBytes } from 'node:crypto'
 
 const password = 'local-browser-test-password'
 const username = () => 'operator-' + randomBytes(5).toString('hex')
+const admin = username()
 
 async function session(page: Page) {
-  const response = await page.request.post('/api/auth/register', {data: {username: username(), password}})
-  expect(response.status()).toBe(201)
+  const setup = await page.request.get('/api/auth/setup')
+  const {needs_initial_account} = await setup.json() as {needs_initial_account: boolean}
+  const response = await page.request.post('/api/auth/' + (needs_initial_account ? 'register' : 'login'), {
+    data: {username: admin, password},
+  })
+  expect(response.status()).toBe(needs_initial_account ? 201 : 200)
   await page.goto('/')
   await expect(page.getByRole('heading', {name: '网络总览', exact: true})).toBeVisible()
 }
 
 test('register, sign out and sign back in through the browser', async ({page}) => {
-  const name = username()
   await page.goto('/')
-  await page.getByRole('button', {name: '创建账户'}).click()
-  await page.getByLabel('用户名', {exact: true}).fill(name)
+  const setup = await page.request.get('/api/auth/setup')
+  const {needs_initial_account} = await setup.json() as {needs_initial_account: boolean}
+  if (needs_initial_account) await page.getByRole('button', {name: '创建账户'}).click()
+  await page.getByLabel('用户名', {exact: true}).fill(admin)
   await page.getByLabel('密码', {exact: true}).fill(password)
-  await page.getByRole('button', {name: '注册并登录'}).click()
+  await page.getByRole('button', {name: needs_initial_account ? '注册并登录' : '登录', exact: true}).click()
   await expect(page.getByRole('heading', {name: '网络总览', exact: true})).toBeVisible()
   await page.goto('/#settings')
   await page.getByRole('button', {name: '退出登录'}).click()
-  await page.getByLabel('用户名', {exact: true}).fill(name)
+  await page.getByLabel('用户名', {exact: true}).fill(admin)
   await page.getByLabel('密码', {exact: true}).fill(password)
   await page.getByRole('button', {name: '登录', exact: true}).click()
   await expect.poll(async () => (await page.request.get('/api/auth/me')).status()).toBe(200)

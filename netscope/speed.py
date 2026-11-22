@@ -5,6 +5,7 @@ import secrets
 import statistics
 import time
 from contextlib import suppress
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -27,12 +28,17 @@ results = Table(
     Column("latency_ms", Float),
     Column("download_mbps", Float),
     Column("upload_mbps", Float),
+    Column("mode", String),
+    Column("rounds", Integer),
+    Column("download_cv_pct", Float),
+    Column("upload_cv_pct", Float),
 )
 
 
 class Target(BaseModel):
     target: str = Field(min_length=1, max_length=256)
     token: SecretStr = Field(min_length=12, max_length=128)
+    mode: Literal["quick", "repeated"] = "quick"
 
 
 def endpoint(value):
@@ -73,12 +79,23 @@ class SpeedTest:
         self.task = None
         self.state = {"running": False, "phase": "idle", "progress": 0, "result": None, "error": None}
         metadata.create_all(engine)
+        # Add optional measurement metadata without discarding an existing user's history.
+        with engine.begin() as db:
+            present = {row[1] for row in db.exec_driver_sql("PRAGMA table_info(speed_results)")}
+            for name, kind in (
+                ("mode", "TEXT"),
+                ("rounds", "INTEGER"),
+                ("download_cv_pct", "REAL"),
+                ("upload_cv_pct", "REAL"),
+            ):
+                if name not in present:
+                    db.exec_driver_sql(f"ALTER TABLE speed_results ADD COLUMN {name} {kind}")
 
-    def start(self, target, key):
+    def start(self, target, key, mode="quick"):
         if self.task and not self.task.done():
             raise HTTPException(409, "已有测速任务正在执行")
         self.state = {"running": True, "phase": "latency", "progress": 0, "result": None, "error": None}
-        self.task = asyncio.create_task(self.measure(target, key))
+        self.task = asyncio.create_task(self.measure(target, key, mode))
 
     async def close(self):
         if self.task and not self.task.done():
@@ -86,8 +103,11 @@ class SpeedTest:
             with suppress(asyncio.CancelledError):
                 await self.task
 
-    async def exchange(self, client, key, path, size, method="GET"):
+    async def exchange(
+        self, client, key, path, size, method="GET", progress_span=(20, 58)
+    ):
         stamp, nonce = str(int(time.time())), secrets.token_hex(16)
+        start_progress, end_progress = progress_span
         challenge = f"{method} {path} {stamp} {nonce}"
         headers = {
             "X-NetScope-Time": stamp,
@@ -98,7 +118,9 @@ class SpeedTest:
         async def upload():
             for i in range(SIZE // len(BLOCK)):
                 yield BLOCK
-                self.state["progress"] = 60 + (i + 1) * 38 // (SIZE // len(BLOCK))
+                self.state["progress"] = start_progress + (
+                    (i + 1) * (end_progress - start_progress) // (SIZE // len(BLOCK))
+                )
 
         if method == "POST":
             headers["Content-Length"] = str(SIZE)
@@ -122,7 +144,9 @@ class SpeedTest:
                 if received > size:
                     raise ValueError("测试端点返回的数据超过上限")
                 if path == "/v1/download":
-                    self.state["progress"] = 20 + received * 38 // SIZE
+                    self.state["progress"] = start_progress + (
+                        received * (end_progress - start_progress) // SIZE
+                    )
                 else:
                     small.extend(chunk)
             elapsed = time.perf_counter() - start
@@ -140,13 +164,14 @@ class SpeedTest:
                 raise ValueError("对端未确认上传字节数")
             return elapsed, None
 
-    async def measure(self, target, key):
+    async def measure(self, target, key, mode="quick"):
+        rounds = 8 if mode == "repeated" else 1
         try:
             async with (
-                asyncio.timeout(45),
+                asyncio.timeout(110 if rounds > 1 else 45),
                 httpx.AsyncClient(
                     base_url=target,
-                    timeout=12,
+                    timeout=30 if rounds > 1 else 12,
                     trust_env=False,
                     follow_redirects=False,
                     headers={"Accept-Encoding": "identity"},
@@ -158,18 +183,42 @@ class SpeedTest:
                     samples.append(seconds * 1000)
                     self.state["progress"] = (i + 1) * 4
                 self.state["phase"] = "download"
-                down, _ = await self.exchange(client, key, "/v1/download", size=SIZE)
+                down_times = []
+                for index in range(rounds):
+                    start = 20 + index * 39 // rounds
+                    end = 20 + (index + 1) * 39 // rounds
+                    duration, _ = await self.exchange(
+                        client, key, "/v1/download", size=SIZE, progress_span=(start, end)
+                    )
+                    down_times.append(duration)
                 self.state.update(phase="upload", progress=60)
-                up, _ = await self.exchange(
-                    client, key, "/v1/upload", method="POST", size=len(str(SIZE))
-                )
+                up_times = []
+                for index in range(rounds):
+                    start = 60 + index * 39 // rounds
+                    end = 60 + (index + 1) * 39 // rounds
+                    duration, _ = await self.exchange(
+                        client, key, "/v1/upload", method="POST", size=len(str(SIZE)),
+                        progress_span=(start, end)
+                    )
+                    up_times.append(duration)
+
+            def variation(durations):
+                if len(durations) == 1:
+                    return None
+                rates = [SIZE * 8 / duration / 1e6 for duration in durations]
+                return 100 * statistics.pstdev(rates) / statistics.mean(rates)
+
             row = {
                 "at": time.time(),
                 "target": target,
                 "scope": "loopback" if peer.is_loopback else "internet" if peer.is_global else "lan",
                 "latency_ms": statistics.median(samples),
-                "download_mbps": SIZE * 8 / down / 1e6,
-                "upload_mbps": SIZE * 8 / up / 1e6,
+                "download_mbps": SIZE * rounds * 8 / sum(down_times) / 1e6,
+                "upload_mbps": SIZE * rounds * 8 / sum(up_times) / 1e6,
+                "mode": mode,
+                "rounds": rounds,
+                "download_cv_pct": variation(down_times),
+                "upload_cv_pct": variation(up_times),
             }
             with self.engine.begin() as db:
                 db.execute(insert(results).values(**row))
@@ -204,7 +253,7 @@ async def start(request: Request, body: Target):
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     test = request.app.state.speed
-    test.start(target, body.token.get_secret_value())
+    test.start(target, body.token.get_secret_value(), body.mode)
     return test.state.copy()
 
 

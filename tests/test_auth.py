@@ -47,3 +47,24 @@ def test_access_and_restart(tmp_path):
         assert client.post("/api/auth/login", json=CREDENTIALS).status_code == 200
         assert client.get("/api/monitor").status_code == 200
         assert client.get("/api/missing").status_code == 404
+
+
+def test_registration_requires_session_after_setup_and_limits_failed_logins(tmp_path):
+    with TestClient(create_app(tmp_path / "secured.db"), base_url=BASE) as client:
+        assert client.get("/api/auth/setup").json() == {"needs_initial_account": True}
+        first = {"username": "secured-operator", "password": "long-enough-password"}
+        second = {"username": "second-operator", "password": "second-long-password"}
+        assert client.post("/api/auth/register", json=first).status_code == 201
+        assert client.get("/api/auth/setup").json() == {"needs_initial_account": False}
+        assert client.post("/api/auth/register", json=second).status_code == 201
+        assert client.get("/api/auth/me").json()["username"] == first["username"]
+        client.post("/api/auth/logout").raise_for_status()
+        response = client.post(
+            "/api/auth/register", json={"username": "stranger", "password": "password-123"}
+        )
+        assert response.status_code == 403
+        for _ in range(6):
+            response = client.post("/api/auth/login", json={**first, "password": "wrong-password"})
+            assert response.status_code == 401
+        blocked = client.post("/api/auth/login", json=first)
+        assert blocked.status_code == 429 and blocked.headers["retry-after"] == "60"

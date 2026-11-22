@@ -40,3 +40,22 @@ def test_idle_peer_connection_obeys_deadline(monkeypatch):
         finally:
             server.shutdown()
             worker.join(timeout=3)
+
+
+def test_existing_speed_database_gets_optional_columns(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'older.db'}")
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "CREATE TABLE speed_results (id INTEGER PRIMARY KEY, at FLOAT, target TEXT, "
+            "scope TEXT, latency_ms FLOAT, download_mbps FLOAT, upload_mbps FLOAT)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO speed_results (at, target) VALUES (100, 'legacy-peer')"
+        )
+    speed.SpeedTest(engine, lambda *_: None)
+    with engine.connect() as db:
+        columns = {row[1] for row in db.exec_driver_sql("PRAGMA table_info(speed_results)")}
+        assert {"mode", "rounds", "download_cv_pct", "upload_cv_pct"} <= columns
+        record = db.execute(speed.results.select()).mappings().one()
+        assert record["target"] == "legacy-peer" and record["mode"] is None
+    engine.dispose()

@@ -70,3 +70,37 @@ def test_peer_rejects_wrong_key_and_unbounded_body(peer, tmp_path):
 def test_endpoint_limits(value):
     with pytest.raises(ValueError):
         endpoint(value)
+
+
+def test_repeated_measurement_records_variation(peer, tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'repeated.db'}")
+    test = SpeedTest(engine, lambda *_: None)
+    asyncio.run(test.measure(peer, "fixture-pairing-key", "repeated"))
+    assert test.state["phase"] == "complete", test.state
+    result = test.state["result"]
+    assert result["mode"] == "repeated" and result["rounds"] == 8
+    assert result["download_cv_pct"] >= 0 and result["upload_cv_pct"] >= 0
+    assert result["download_mbps"] > 0 and result["upload_mbps"] > 0
+    with engine.connect() as db:
+        row = db.execute(select(results)).mappings().one()
+        assert row["rounds"] == 8 and row["mode"] == "repeated"
+    engine.dispose()
+
+
+def test_peer_rejects_replayed_signed_request(peer):
+    stamp, nonce = str(int(time.time())), "f" * 32
+    proof = signature("fixture-pairing-key", f"GET /v1/ping {stamp} {nonce}")
+    with closing(HTTPConnection("127.0.0.1", urlsplit(peer).port, timeout=3)) as client:
+        for expected in (200, 401):
+            client.request(
+                "GET",
+                "/v1/ping",
+                headers={
+                    "X-NetScope-Time": stamp,
+                    "X-NetScope-Nonce": nonce,
+                    "X-NetScope-Auth": proof,
+                },
+            )
+            answer = client.getresponse()
+            assert answer.status == expected
+            answer.read()
