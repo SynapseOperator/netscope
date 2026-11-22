@@ -31,8 +31,8 @@ def create_app(db_path=None):
             connection.exec_driver_sql("PRAGMA journal_mode=WAL")
         auth.metadata.create_all(engine)
         app.state.db = engine
-        monitor = app.state.monitor = Monitor(engine)
         capture = app.state.capture = packets.Capture(engine)
+        monitor = app.state.monitor = Monitor(engine, prune_capture=capture.prune_expired)
         test = app.state.speed = speed.SpeedTest(engine, monitor.log)
         await monitor.start()
         try:

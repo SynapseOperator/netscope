@@ -8,10 +8,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
 from .devices import connections, neighbors
+from .diagnosis import router as diagnosis_router
 from .telemetry import AlertRule
 from .telemetry_store import alerts, history_query, logs
 
 router = APIRouter()
+router.include_router(diagnosis_router)
 
 
 class Selection(BaseModel):

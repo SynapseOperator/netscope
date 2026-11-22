@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     Float,
@@ -34,6 +35,7 @@ alerts = Table(
     Column("kind", String, nullable=False),
     Column("message", String, nullable=False),
     Column("advice", String, nullable=False),
+    Column("observation", JSON),
     Column("recovered_at", Float),
     Column("end_reason", String),
     Column("acknowledged", Boolean, nullable=False, default=False),

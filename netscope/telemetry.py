@@ -67,10 +67,14 @@ def counter_delta(previous, current, elapsed):
 
 
 class Monitor:
-    def __init__(self, engine):
+    def __init__(self, engine, *, prune_capture=None):
         self.engine = engine
+        self.prune_capture = prune_capture
         metadata.create_all(engine)
-        with engine.connect() as db:
+        with engine.begin() as db:
+            columns = {row[1] for row in db.exec_driver_sql("PRAGMA table_info(monitor_alerts)")}
+            if "observation" not in columns:
+                db.exec_driver_sql("ALTER TABLE monitor_alerts ADD COLUMN observation JSON")
             config = dict(db.execute(select(settings)).all())
             active = db.execute(
                 select(alerts.c.interface, alerts.c.kind).where(alerts.c.recovered_at.is_(None))
@@ -132,7 +136,7 @@ class Monitor:
         with self.engine.begin() as db:
             db.execute(logs.insert().values(ts=time.time(), action=action, message=message))
 
-    def _incident(self, name, kind, ts, message, advice):
+    def _incident(self, name, kind, ts, message, advice, observation=None):
         if (name, kind) in self.open_alerts:
             return
         with self.engine.begin() as db:
@@ -143,6 +147,7 @@ class Monitor:
                     kind=kind,
                     message=message,
                     advice=advice,
+                    observation=observation,
                 )
             )
             db.execute(logs.insert().values(ts=ts, action="alert.open", message=message))
@@ -174,6 +179,7 @@ class Monitor:
                 now,
                 f"两次采样相隔 {elapsed:.1f} 秒，速率曲线已留空。",
                 "检查主机睡眠或本地服务是否繁忙。",
+                {"gap_seconds": elapsed},
             )
         elif elapsed > 0:
             self._recover("", "sample_gap", now)
@@ -276,6 +282,8 @@ class Monitor:
             self.last_flush = monotonic
         if now - self.last_prune >= 86400:
             prune(self.engine, now)
+            if self.prune_capture:
+                self.prune_capture()
             self.last_prune = now
 
     def _check_rates(self, name, now, monotonic, rx, tx):
@@ -294,6 +302,13 @@ class Monitor:
                     f"{name} {label}连续 {self.rule.consecutive} 次超过 {limit:g} Mbps，"
                     f"当前 {value / 1_000_000:.2f} Mbps。",
                     "查看同一时段的通信端点、测速记录或已授权的抓包统计，确认流量来源。",
+                    {
+                        "observed_bps": value,
+                        "threshold_bps": limit * 1_000_000,
+                        "consecutive": self.rule.consecutive,
+                        "recovery_ratio": self.rule.recovery_ratio,
+                        "cooldown_s": self.rule.cooldown_s,
+                    },
                 )
             elif event == "recover":
                 self._recover(name, kind, now)
