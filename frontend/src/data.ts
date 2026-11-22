@@ -92,6 +92,10 @@ export type TestResult = {
   latency_ms: number;
   download_mbps: number;
   upload_mbps: number;
+  mode?: "quick" | "repeated" | null;
+  rounds?: number | null;
+  download_cv_pct?: number | null;
+  upload_cv_pct?: number | null;
 };
 export type Speed = {
   running: boolean;

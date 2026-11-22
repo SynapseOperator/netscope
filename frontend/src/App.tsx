@@ -62,6 +62,18 @@ function Auth({ onUser }: { onUser: (u: User) => void }) {
     [pass, setPass] = useState(""),
     [busy, setBusy] = useState(false),
     [err, setErr] = useState("");
+  const [canRegister, setCanRegister] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    api<{ needs_initial_account: boolean }>("/auth/setup")
+      .then((status) => {
+        if (active) setCanRegister(status.needs_initial_account);
+      })
+      .catch(() => {
+        if (active) setCanRegister(null);
+      });
+    return () => { active = false; };
+  }, []);
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -153,20 +165,22 @@ function Auth({ onUser }: { onUser: (u: User) => void }) {
               <ArrowRight size={15} />
             </button>
           </form>
-          <p className="switch-auth">
-            {register ? "已有账户？" : "首次使用？"}
-            <button
-              className="btn-link"
-              disabled={busy}
-              onClick={() => {
-                setRegister(!register);
-                setErr("");
-                setPass("");
-              }}
-            >
-              {register ? "返回登录" : "创建账户"}
-            </button>
-          </p>
+          {canRegister !== false && (
+            <p className="switch-auth">
+              {register ? "已有账户？" : "首次使用？"}
+              <button
+                className="btn-link"
+                disabled={busy}
+                onClick={() => {
+                  setRegister(!register);
+                  setErr("");
+                  setPass("");
+                }}
+              >
+                {register ? "返回登录" : "创建账户"}
+              </button>
+            </p>
+          )}
         </section>
       </div>
     </main>
@@ -188,6 +202,26 @@ function Preferences({
   const logs = useResource<{ items: LogRow[] }>("/logs", 5000);
   const [error, setError] = useState(""),
     [leaving, setLeaving] = useState(false);
+  const [newName, setNewName] = useState(""),
+    [newPassword, setNewPassword] = useState(""),
+    [adding, setAdding] = useState(false),
+    [added, setAdded] = useState("");
+  async function addAccount(e: FormEvent) {
+    e.preventDefault();
+    setAdding(true);
+    setAdded("");
+    setError("");
+    try {
+      await post("/auth/register", { username: newName.trim(), password: newPassword });
+      setAdded("已创建本地账户：" + newName.trim());
+      setNewName("");
+      setNewPassword("");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setAdding(false);
+    }
+  }
   return (
     <>
       <Heading title="设置" desc="管理本地账户、界面外观和当前采集配置。" />
@@ -221,6 +255,35 @@ function Preferences({
                   </dd>
                 </div>
               </dl>
+              <details className="panel-note">
+                <summary>添加本地账户</summary>
+                <p className="hint">新账户可以访问本机共享的监测数据。</p>
+                <form className="form-stack" onSubmit={addAccount}>
+                  <Field
+                    label="新用户名"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    minLength={2}
+                    maxLength={40}
+                    required
+                    autoComplete="off"
+                  />
+                  <Field
+                    label="初始密码"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={8}
+                    maxLength={128}
+                    required
+                    autoComplete="new-password"
+                  />
+                  <button className="btn" disabled={adding}>
+                    {adding ? "正在创建…" : "创建账户"}
+                  </button>
+                </form>
+                {added && <Notice tone="success">{added}</Notice>}
+              </details>
               <button
                 className="btn mt-4"
                 disabled={leaving}
