@@ -15,11 +15,13 @@ export function TrafficChart({
   dark = false,
   period = 0,
   step = 1,
+  onInspect,
 }: {
   points: PlotPoint[];
   dark?: boolean;
   period?: number;
   step?: number;
+  onInspect?: (second: number) => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null),
     instance = useRef<echarts.EChartsType | null>(null);
@@ -35,6 +37,35 @@ export function TrafficChart({
       instance.current = null;
     };
   }, []);
+  useEffect(() => {
+    const graph = instance.current;
+    if (!graph || !onInspect) return;
+    const selectPoint = (event: { offsetX: number; offsetY: number }) => {
+      const pixel = [event.offsetX, event.offsetY];
+      if (!graph.containPixel({ gridIndex: 0 }, pixel)) return;
+      const [milliseconds] = graph.convertFromPixel(
+        { gridIndex: 0 },
+        pixel,
+      ) as number[];
+      const nearest = points.reduce<PlotPoint | null>(
+        (best, point) =>
+          point.rx_bps === null && point.tx_bps === null
+            ? best
+            : !best ||
+                Math.abs(point.ts * 1000 - milliseconds) <
+                  Math.abs(best.ts * 1000 - milliseconds)
+              ? point
+              : best,
+        null,
+      );
+      if (nearest && Math.abs(nearest.ts * 1000 - milliseconds) <= 3000)
+        onInspect(nearest.ts);
+    };
+    graph.getZr().on("click", selectPoint);
+    return () => {
+      if (!graph.isDisposed()) graph.getZr().off("click", selectPoint);
+    };
+  }, [points, onInspect]);
   useEffect(() => {
     const graph = instance.current;
     if (!graph) return;

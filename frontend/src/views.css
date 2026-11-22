@@ -773,3 +773,18 @@ progress::-webkit-progress-value {
     font-size: 11px;
   }
 }
+.diagnosis {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--subtle);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.diagnosis h4, .diagnosis dt { margin: 12px 0 3px; font-weight: 650; }
+.diagnosis h4:first-child { margin-top: 0; }
+.diagnosis dd, .diagnosis p { margin: 0; line-height: 1.55; }
+.diagnosis dl, .diagnosis ul { margin: 8px 0; }
+.diagnosis ul { padding-left: 1.25em; }
+.diagnosis-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }

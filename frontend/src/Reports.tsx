@@ -21,6 +21,9 @@ import {
   useResource,
 } from "./data";
 import { TrafficChart } from "./chart";
+import { CaptureAnalysis } from "./CaptureAnalysis";
+import { AlertDiagnosis } from "./AlertDiagnosis";
+import { historyLink, readWindow } from "./timeWindow";
 import { CountTable } from "./Packets";
 import { SpeedTable } from "./Speed";
 import {
@@ -50,43 +53,72 @@ function localTime(ts: number) {
   const t = new Date(ts);
   return new Date(t.getTime() - t.getTimezoneOffset() * 60000)
     .toISOString()
-    .slice(0, 16);
+    .slice(0, 19);
 }
 export function Reports({ live, dark }: { live: Live; dark: boolean }) {
-  const [tab, setTab] = useState<"traffic" | "captures" | "speed">("traffic");
+  const params = new URLSearchParams(location.hash.split("?")[1]);
+  const [tab, setTab] = useState<"traffic" | "captures" | "speed">(
+    params.get("tab") === "captures" ? "captures" : "traffic",
+  );
+  const [filter, setFilter] = useState(() => {
+    const linked = readWindow(params);
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      start: linked?.start ?? now - 86400,
+      end: linked?.end ?? now,
+      iface: linked?.interface ?? "",
+    };
+  });
   const [range, setRange] = useState(() => ({
-    start: localTime(Date.now() - 86400000),
-    end: localTime(Date.now()),
-    iface: "",
-  }));
-  const [filter, setFilter] = useState(range),
+      start: localTime(filter.start * 1000),
+      end: localTime(filter.end * 1000),
+      iface: filter.iface,
+    })),
     [msg, setMsg] = useState(""),
     [page, setPage] = useState(0),
     [chosen, setChosen] = useState<number | null>(null);
-  const from = new Date(filter.start).getTime() / 1000,
-    to = new Date(filter.end).getTime() / 1000 + 59.999;
-  const q = new URLSearchParams({ start: String(from), end: String(to) });
+  const from = filter.start,
+    to = filter.end;
+  const q = new URLSearchParams({
+    start: String(from),
+    end: String(to - 0.001),
+  });
   if (filter.iface) q.set("interface", filter.iface);
   const hist = useResource<{ items: Aggregate[]; truncated: boolean }>(
     tab === "traffic" ? "/history?" + q : null,
   );
   const sessions = useResource<Session[]>(
-    tab === "captures" ? "/capture/history?start=" + from + "&end=" + to : null,
+    tab === "captures"
+      ? "/capture/history?start=" + from + "&end=" + (to - 0.001)
+      : null,
   );
   const speeds = useResource<TestResult[]>(
-    tab === "speed" ? "/speed/history?start=" + from + "&end=" + to : null,
+    tab === "speed"
+      ? "/speed/history?start=" + from + "&end=" + (to - 0.001)
+      : null,
   );
-  const selected = sessions.data?.find((s) => s.id === chosen);
+  const recorded = sessions.data?.filter(
+    (s) => !filter.iface || s.interface === filter.iface,
+  );
+  const selected = recorded?.find((s) => s.id === chosen);
   function apply(e: FormEvent) {
     e.preventDefault();
-    if (range.start > range.end) {
-      setMsg("开始时间不能晚于结束时间。");
+    const start =
+        range.start === localTime(from * 1000)
+          ? from
+          : new Date(range.start).getTime() / 1000,
+      end =
+        range.end === localTime(to * 1000)
+          ? to
+          : new Date(range.end).getTime() / 1000;
+    if (!(start < end)) {
+      setMsg("开始时间须早于结束时间。");
       return;
     }
     setMsg("");
     setPage(0);
     setChosen(null);
-    setFilter({ ...range });
+    setFilter({ start, end, iface: range.iface });
     hist.reload();
     sessions.reload();
     speeds.reload();
@@ -133,18 +165,20 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
             <Field
               label="开始时间"
               type="datetime-local"
+              step="1"
               value={range.start}
               required
               onChange={(e) => setRange({ ...range, start: e.target.value })}
             />
             <Field
-              label="结束时间"
+              label="结束时间（不含）"
               type="datetime-local"
+              step="1"
               value={range.end}
               required
               onChange={(e) => setRange({ ...range, end: e.target.value })}
             />
-            {tab === "traffic" && (
+            {tab !== "speed" && (
               <label className="field">
                 <span>网卡</span>
                 <select
@@ -154,6 +188,10 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
                   }
                 >
                   <option value="">全部网卡</option>
+                  {range.iface &&
+                    !live.data?.interfaces.some(
+                      (i) => i.name === range.iface,
+                    ) && <option value={range.iface}>{range.iface}</option>}
                   {live.data?.interfaces.map((i) => (
                     <option key={i.name}>{i.name}</option>
                   ))}
@@ -183,7 +221,7 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
             <Panel
               title="流量聚合记录"
               icon={History}
-              desc="速率按实际有效采样时长计算；字节数为该窗口的累计增量。"
+              desc="显示与查询范围重叠的完整分钟桶。每桶速率按其有效采样时长计算。"
               action={<span className="pill">{items.length} 条</span>}
             >
               {hist.data?.truncated && (
@@ -207,6 +245,7 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
                             "上传字节",
                             "平均下载",
                             "平均上传",
+                            "同期抓包",
                           ].map((h) => (
                             <th key={h}>{h}</th>
                           ))}
@@ -222,6 +261,18 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
                             <td>{bytes(r.tx_bytes)}</td>
                             <td>{Object.values(rate(r.rx_bps)).join(" ")}</td>
                             <td>{Object.values(rate(r.tx_bps)).join(" ")}</td>
+                            <td>
+                              <a
+                                className="btn-link"
+                                href={historyLink({
+                                  start: r.ts,
+                                  end: r.ts + 60,
+                                  interface: r.interface,
+                                })}
+                              >
+                                查看该分钟
+                              </a>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -263,13 +314,19 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
         )}
         {tab === "captures" && (
           <>
+            <CaptureAnalysis
+              historical
+              start={from}
+              end={to}
+              iface={filter.iface}
+            />
             {sessions.error && <Notice>{sessions.error}</Notice>}
             <Panel
-              title="抓包会话"
+              title="完整会话记录"
               icon={Layers3}
-              desc="选择会话后查看已保存的协议与端点汇总。"
+              desc="列出在此区间启动或导入的会话。下表显示整场合计，区间内的捕获量见上方分析。"
             >
-              {sessions.data?.length ? (
+              {recorded?.length ? (
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -287,7 +344,7 @@ export function Reports({ live, dark }: { live: Live; dark: boolean }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {sessions.data.map((s) => (
+                      {recorded.map((s) => (
                         <tr
                           key={s.id}
                           className={s.id === selected?.id ? "selected" : ""}
@@ -443,6 +500,7 @@ export function Alerts() {
   const rows = useResource<{ items: AlertRow[] }>("/alerts", 3500),
     rule = useResource<Rule>("/alerts/rule");
   const [filter, setFilter] = useState("all"),
+    [diagnosed, setDiagnosed] = useState<number | null>(null),
     [busy, setBusy] = useState(0),
     [error, setError] = useState("");
   const items = (rows.data?.items ?? []).filter(
@@ -525,6 +583,16 @@ export function Alerts() {
                     <ShieldCheck size={14} />
                     {a.advice}
                   </div>
+                  <button
+                    className="btn-link"
+                    aria-expanded={diagnosed === a.id}
+                    onClick={() =>
+                      setDiagnosed(diagnosed === a.id ? null : a.id)
+                    }
+                  >
+                    {diagnosed === a.id ? "收起诊断" : "查看诊断依据"}
+                  </button>
+                  {diagnosed === a.id && <AlertDiagnosis id={a.id} />}
                 </article>
               ))}
             </div>

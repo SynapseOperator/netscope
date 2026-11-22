@@ -1,0 +1,237 @@
+.analysis-toolbar .field input[type="datetime-local"] {
+  width: 172px;
+}
+.capture-filter {
+  padding-top: 4px;
+}
+.capture-filter input.bpf-expression {
+  width: min(360px, 100%);
+}
+.capture-filter .field:has(.bpf-expression) {
+  flex: 1;
+  min-width: 170px;
+}
+.analysis-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 20px 12px;
+  background: var(--soft);
+  border-radius: 9px;
+  padding: 12px 4px;
+}
+.analysis-stats > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 15px;
+  border-right: 1px solid var(--line);
+}
+.analysis-stats > span:last-child {
+  border: 0;
+}
+.analysis-stats small,
+.timeline-head small,
+.timeline-scale,
+.segment-stats,
+.top-n {
+  color: var(--muted);
+  font-size: 11px;
+}
+.analysis-stats strong {
+  font-size: 18px;
+  font-weight: 620;
+  line-height: 1.3;
+}
+.analysis-message {
+  font-size: 12px;
+  color: var(--secondary);
+  margin: 0 20px 12px;
+}
+.analysis-message.partial {
+  background: var(--warn-wash);
+  color: var(--warn);
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+.timeline-head,
+.ranking-head,
+.timeline-scale,
+.top-n,
+.linked-scope,
+.mode-fields,
+.timeline-head > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.timeline-head,
+.ranking-head,
+.timeline-scale {
+  justify-content: space-between;
+}
+.timeline-head,
+.segment-plot strong,
+.test-evidence h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.timeline-head small {
+  font-weight: 450;
+}
+.time-bars {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  align-items: stretch;
+  height: 64px;
+  border-bottom: 1px solid var(--line);
+  margin: 5px 0 3px;
+  gap: 2px;
+}
+.time-bars button {
+  background: transparent;
+  border: none;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.time-bars button i {
+  width: 100%;
+  max-width: 40px;
+  background: var(--blue);
+  border-radius: 3px 3px 0 0;
+  opacity: 0.75;
+}
+.time-bars button:hover:not(:disabled) {
+  background: var(--blue-wash);
+}
+.time-bars button:disabled i {
+  background: var(--line);
+}
+.ranking-head {
+  padding: 0 20px 12px;
+  flex-wrap: wrap;
+}
+.top-n select {
+  min-height: 30px;
+  font-size: 12px;
+}
+.linked-scope {
+  flex-wrap: wrap;
+  margin: 0 20px 12px;
+  color: var(--blue-ink);
+  font-size: 11px;
+}
+.linked-scope code {
+  font-family: var(--mono);
+  color: var(--secondary);
+  background: var(--soft);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.mode-fields {
+  flex-wrap: wrap;
+}
+.mode-fields label {
+  flex: 1;
+  min-width: 130px;
+}
+.segment-plot,
+.test-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.segment-plot {
+  margin-top: 14px;
+}
+.segment-bars {
+  height: 53px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  margin-top: 4px;
+}
+.segment-bars > span {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+}
+.segment-bars i {
+  width: 100%;
+  max-width: 22px;
+  border-radius: 2px 2px 0 0;
+  background: var(--blue);
+}
+.segment-bars.upload i {
+  background: var(--teal);
+}
+.segment-stats {
+  margin-top: 4px;
+}
+.test-evidence h3 {
+  margin-bottom: 5px;
+}
+.test-evidence dt,
+.test-evidence dd {
+  white-space: normal;
+}
+.measurement-detail {
+  padding: 14px 20px;
+  background: var(--soft);
+}
+@media (max-width: 650px) {
+  .analysis-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-inline: 14px;
+  }
+  .analysis-stats > span:nth-child(2) {
+    border: 0;
+  }
+  .test-evidence,
+  .segment-plot {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .analysis-toolbar .field input[type="datetime-local"] {
+    width: 150px;
+  }
+  .ranking-head {
+    padding-inline: 14px;
+  }
+  .timeline-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .top-n,
+  .timeline-head small {
+    font-size: 10px;
+  }
+}
+.historical-flow {
+  margin: 12px 20px 15px;
+  padding: 14px;
+  background: var(--soft);
+  border-radius: 8px;
+}
+.historical-flow h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.speed-history-link {
+  grid-column: 1/-1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+.speed-history-link span {
+  color: var(--muted);
+}
